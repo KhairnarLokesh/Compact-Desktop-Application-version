@@ -23,25 +23,25 @@ The desktop application is built on top of **Electron**, separating UI rendering
 
 ```mermaid
 graph TD
-    subgraph Client [Desktop Client Shell (Electron)]
-        UI[Renderer Process\nReact UI Dashboard] <-->|IPC Bridge| Main[Main Process\nElectron Controller]
+    subgraph Client ["Desktop Client Shell (Electron)"]
+        UI["Renderer Process<br/>React UI Dashboard"] <-->|IPC Bridge| Main["Main Process<br/>Electron Controller"]
     end
     
-    subgraph Backend [Local Backend Sidecar]
-        Express[Express.js Server\nNode.js / TypeScript] <-->|HTTP API| UI
+    subgraph Backend ["Local Backend Sidecar"]
+        Express["Express.js Server<br/>Node.js / TypeScript"] <-->|HTTP API| UI
         Express <-->|Orchestrates| Main
         
-        Analysis[Code Analysis Engine\nAST & Static Linting] <--> Express
-        Rules[Rule & Heuristic Engine\nSecurity Scans] <--> Express
+        Analysis["Code Analysis Engine<br/>AST & Static Linting"] <--> Express
+        Rules["Rule & Heuristic Engine<br/>Security Scans"] <--> Express
     end
     
-    subgraph Data [Data & Storage Layer]
-        ES[(Elasticsearch)\nVector Store & Text Search] <-->|Port 9200| Express
-        FS[(Local File System\nRepository Code)] <-->|Scan / Read| Express
+    subgraph Data ["Data & Storage Layer"]
+        ES[("Elasticsearch<br/>Vector Store & Text Search")] <-->|Port 9200| Express
+        FS[("Local File System<br/>Repository Code")] <-->|Scan / Read| Express
     end
     
-    subgraph Inference [Local Inference Engine]
-        Ollama[Ollama LLM Runtime\ne.g. Codegemma / Llama 3] <-->|Port 11434| Express
+    subgraph Inference ["Local Inference Engine"]
+        Ollama["Ollama LLM Runtime<br/>e.g. Codegemma / Llama 3"] <-->|Port 11434| Express
     end
 
     style Client fill:#2d3748,stroke:#4a5568,stroke-width:1px,color:#e2e8f0
@@ -66,10 +66,10 @@ The following sequence details how the application indexes, retrieves, reviews, 
 sequenceDiagram
     autonumber
     actor User as Developer
-    participant UI as Desktop Dashboard (Renderer)
+    participant UI as "Desktop Dashboard (Renderer)"
     participant Backend as Express Sidecar
     participant ES as Local Elasticsearch
-    participant LLM as Ollama (Local LLM)
+    participant LLM as "Ollama (Local LLM)"
     
     User->>UI: Select Local Repo & Start Audit
     UI->>Backend: Post /api/scan { repoPath }
