@@ -1,20 +1,20 @@
-# 🛡️ Compact: Local-First, Privacy-Preserving AI Code Review Ecosystem
+# Compact: Local-First, Privacy-Preserving AI Code Review Ecosystem
 
 **Compact** is a secure, local-first AI-powered code review and security analysis platform designed to audit codebases for security vulnerabilities, code quality issues, performance bottlenecks, and style violations. Unlike traditional cloud-based code review services, **Compact** runs entirely on your local machine, ensuring complete source code privacy and eliminating dependencies on external APIs.
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
-*   **🔒 Absolute Source Code Privacy**: Code analysis, vector embedding, and LLM inference run entirely locally (using Ollama and Elasticsearch). No code leaves your system.
-*   **🧠 Repository-Aware Intelligence**: Uses Retrieval-Augmented Generation (RAG) and repository indexing to analyze code with full context of project structure, files, and dependencies.
-*   **⚡ Hybrid Analysis**: Combines local LLM reasoning with a deterministic Rule/Heuristic Engine to check for code smells, OWASP Top 10 vulnerabilities, and syntax patterns.
-*   **📊 Interactive Dashboard**: A modern web/desktop dashboard to view code reviews, inspect issues, and track historical technical debt.
-*   **📁 Multi-Format Export**: Export detailed audit reviews to PDF, JSON, and Markdown formats.
+*   **Absolute Source Code Privacy**: Code analysis, vector embedding, and LLM inference run entirely locally (using Ollama and Elasticsearch). No code leaves your system.
+*   **Repository-Aware Intelligence**: Uses Retrieval-Augmented Generation (RAG) and repository indexing to analyze code with full context of project structure, files, and dependencies.
+*   **Hybrid Analysis**: Combines local LLM reasoning with a deterministic Rule/Heuristic Engine to check for code smells, OWASP Top 10 vulnerabilities, and syntax patterns.
+*   **Interactive Dashboard**: A modern web/desktop dashboard to view code reviews, inspect issues, and track historical technical debt.
+*   **Multi-Format Export**: Export detailed audit reviews to PDF, JSON, and Markdown formats.
 
 ---
 
-## 📐 System Architecture & Design
+## System Architecture & Design
 
 Compact is designed as a local-first desktop application. It utilizes a hybrid architecture combining a desktop shell with a backend sidecar service to coordinate heavy computation tasks (AST parsing, Elasticsearch indexing, and LLM inference) without compromising performance or privacy.
 
@@ -92,7 +92,7 @@ sequenceDiagram
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 | Architecture Layer | Component / Technology | Purpose |
 | :--- | :--- | :--- |
@@ -106,7 +106,7 @@ sequenceDiagram
 
 ---
 
-## ⚙️ System Requirements
+## System Requirements
 
 ### Hardware Requirements
 *   **Processor**: Intel Core i5 / AMD Ryzen 5 or higher
@@ -124,7 +124,7 @@ sequenceDiagram
 
 ---
 
-## 📚 Comparison with Existing Work
+## Comparison with Existing Work
 
 | Tool | Methodology | Key Limitation | How Compact Solves It |
 | :--- | :--- | :--- | :--- |
@@ -134,7 +134,7 @@ sequenceDiagram
 
 ---
 
-## 🛠️ Quick Start & Setup
+## Quick Start & Setup
 
 ### 1. Prerequisites Setup
 Make sure you have Elasticsearch and Ollama installed and running.
@@ -164,11 +164,9 @@ npm run dev
 
 ---
 
-## 👥 Project Team
+## Project Team
 
 *   **Vaishnavi Nikam**
 *   **Sneha More**
 *   **Lokesh Khairnar**
 *   **Kanhaiya Bagul**
-
-
