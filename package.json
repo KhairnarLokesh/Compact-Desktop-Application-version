@@ -1,0 +1,28 @@
+{
+  "name": "compact-desktop-application-version",
+  "version": "1.0.0",
+  "description": "**Compact** is a secure, local-first AI-powered code review and security analysis platform designed to audit codebases for security vulnerabilities, code quality issues, performance bottlenecks, and style violations. Unlike traditional cloud-based code review services, **Compact** runs entirely on your local machine, ensuring complete source code privacy and eliminating dependencies on external APIs.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KhairnarLokesh/Compact-Desktop-Application-version.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/KhairnarLokesh/Compact-Desktop-Application-version/issues"
+  },
+  "homepage": "https://github.com/KhairnarLokesh/Compact-Desktop-Application-version#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "ollama": "^0.6.3"
+  }
+}
