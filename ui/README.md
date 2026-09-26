@@ -1,5 +1,18 @@
-# React + Vite
+# Compact Desktop Application UI
 
+## How to run
+
+To run this project locally, execute the following commands from the root directory:
+
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+---
+
+## React + Vite
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
