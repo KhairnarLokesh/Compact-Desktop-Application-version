@@ -156,9 +156,17 @@ cd Compact-Desktop-Application-version
 npm install
 ```
 
-### 3. Running the Server
-Run the development environment:
+### 3. Running the Application
+
+Run the backend development server:
 ```bash
+npm run dev
+```
+
+Run the UI dashboard:
+```bash
+cd ui
+npm install
 npm run dev
 ```
 
