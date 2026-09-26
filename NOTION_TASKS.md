@@ -8,11 +8,12 @@ Welcome to the Compact task tracking board! This document outlines the current s
 ## 🎯 Current Sprint Assignments
 
 ### 🔐 Authentication & Database Operations
-**Assignees:** 👩‍💻 Vaishnavi Nikam & 👩‍💻 Sneha More
-
-**Key Responsibilities:**
-- [ ] **Database Setup:** Configure and implement the database using **Firebase** (Firestore/Realtime Database).
+**👩‍💻 Vaishnavi Nikam (Authentication):**
 - [ ] **Authentication Flow:** Implement secure user login, session management, and auth logic using Firebase Authentication.
+- [ ] **Auth Security:** Ensure secure handling of authentication states and safe management of user sessions across the app.
+
+**👩‍💻 Sneha More (Database):**
+- [ ] **Database Setup:** Configure and implement the database using **Firebase** (Firestore/Realtime Database).
 - [ ] **Data Security:** Ensure that Firebase Security Rules are properly configured and API keys are stored securely (e.g., via `.env`).
 - [ ] **Database API Endpoints:** Write the frontend/backend services specifically for saving and retrieving user settings and past security audits from Firebase.
 
