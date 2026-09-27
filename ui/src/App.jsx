@@ -3,6 +3,7 @@ import { auth, githubProvider } from './firebase';
 import { onAuthStateChanged, signOut, signInWithPopup, linkWithPopup, GithubAuthProvider } from 'firebase/auth';
 import Auth from './Auth';
 import compactLogo from './assets/compact_logo.png';
+import { db } from "./firebase/firebaseConfig";
 import { 
   FolderGit2, 
   Search, 
@@ -285,6 +286,7 @@ export default function App() {
     return <Auth onLogin={() => {}} />;
   }
 
+
   return (
     <div className="flex h-screen w-full bg-[#0a0a0a] text-[#f3f4f6] font-sans selection:bg-[#ffffff]/10">
       
@@ -552,6 +554,14 @@ export default function App() {
 
         <div className="p-4 border-t border-[#222222] bg-[#111111]">
           <div className="relative">
+           <input
+  id="codebase-question"
+  name="codebaseQuestion"
+  type="text"
+  placeholder="Ask about your codebase..."
+  className="w-full bg-[#161616] border border-[#222222] rounded-md pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-[#9ca3af] transition-all text-[#f3f4f6] placeholder-[#9ca3af]"
+/>
+            <button className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#9ca3af] hover:text-[#f3f4f6] transition-colors">
             <input 
               type="text" 
               value={inputValue}
