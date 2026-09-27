@@ -23,10 +23,10 @@ Welcome to the Compact task tracking board! This document outlines the current s
 **Assignees:** 👨‍💻 Lokesh Khairnar & 👨‍💻 Kanhaiya Bagul
 
 **Key Responsibilities:**
-- [ ] **Chat Feature Implementation:** Build the backend logic to connect the React UI's AI Agent Chat panel with the local Ollama LLM.
-- [ ] **Server Infrastructure:** Maintain the core Express.js backend server and manage Inter-Process Communication (IPC) bridging with Electron.
-- [ ] **LLM Orchestration:** Set up the prompt templates, context handling, and Retrieval-Augmented Generation (RAG) pipelines for the chat feature.
-- [ ] **System Integration:** Wire up the frontend API calls for chat, audit triggers, and real-time streaming back to the UI.
+- [x] **Chat Feature Implementation:** Build the backend logic to connect the React UI's AI Agent Chat panel with the local Ollama LLM.
+- [x] **Server Infrastructure:** Maintain the core Express.js backend server and manage Inter-Process Communication (IPC) bridging with Electron.
+- [x] **LLM Orchestration:** Set up the prompt templates, context handling, and Retrieval-Augmented Generation (RAG) pipelines for the chat feature.
+- [x] **System Integration:** Wire up the frontend API calls for chat, audit triggers, and real-time streaming back to the UI.
 
 ---
 

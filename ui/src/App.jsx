@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { auth, githubProvider } from './firebase';
+import { onAuthStateChanged, signOut, signInWithPopup, linkWithPopup, GithubAuthProvider } from 'firebase/auth';
+import Auth from './Auth';
 import compactLogo from './assets/compact_logo.png';
 import { db } from "./firebase/firebaseConfig";
 import { 
@@ -19,10 +22,269 @@ import {
 } from 'lucide-react';
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [model, setModel] = useState('codegemma:7b');
+  const [model, setModel] = useState('qwen2.5-coder:7b');
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(true);
+  const [repoPath, setRepoPath] = useState('.');
+  const [folderItems, setFolderItems] = useState([]);
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'agent', content: "Hello! I am your local AI Code Reviewer. Select a folder and run a full audit to begin." }
+  ]);
+  const [scanStats, setScanStats] = useState({ files: 0, lines: 0, chunks: 0 });
+  const [consoleLogs, setConsoleLogs] = useState([{ time: new Date().toLocaleTimeString(), type: 'INFO', text: 'System initialized. Waiting for commands...' }]);
+  const [findings, setFindings] = useState([]);
+  const [isReviewing, setIsReviewing] = useState(false);
+
+  const addLog = (type, text) => {
+    setConsoleLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), type, text }]);
+  };
+  const [inputValue, setInputValue] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+  const [isHotspotsOpen, setIsHotspotsOpen] = useState(true);
+
+  const [githubToken, setGithubToken] = useState(null);
+  const [githubRepos, setGithubRepos] = useState([]);
+  
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    let token = urlParams.get('github_token');
+    const error = urlParams.get('error');
+    
+    if (token) {
+      localStorage.setItem('github_token', token);
+      window.history.replaceState({}, document.title, "/");
+    } else {
+      token = localStorage.getItem('github_token');
+    }
+
+    if (token) {
+      setGithubToken(token);
+      fetch('http://localhost:3001/api/github/repos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.repos) setGithubRepos(data.repos);
+      })
+      .catch(err => console.error('Error fetching repos:', err));
+    } else if (error) {
+      console.error('GitHub Auth Error:', error);
+      addLog('ERROR', 'Failed to authenticate with GitHub.');
+    }
+  }, []);
+
+  const handleGithubLink = async () => {
+    try {
+      let credential;
+      try {
+        let result;
+        if (auth.currentUser) {
+          result = await linkWithPopup(auth.currentUser, githubProvider);
+        } else {
+          result = await signInWithPopup(auth, githubProvider);
+        }
+        credential = GithubAuthProvider.credentialFromResult(result);
+      } catch (err) {
+        if (err.code === 'auth/credential-already-in-use' || err.code === 'auth/provider-already-linked') {
+          const result = await signInWithPopup(auth, githubProvider);
+          credential = GithubAuthProvider.credentialFromResult(result);
+        } else {
+          throw err;
+        }
+      }
+
+      if (credential && credential.accessToken) {
+        localStorage.setItem('github_token', credential.accessToken);
+        setGithubToken(credential.accessToken);
+        
+        fetch('http://localhost:3001/api/github/repos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: credential.accessToken })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.repos) setGithubRepos(data.repos);
+          addLog('SUCCESS', 'GitHub account linked successfully.');
+        })
+        .catch(err => console.error('Error fetching repos:', err));
+      }
+    } catch (error) {
+      console.error("Github linking error:", error);
+      addLog('ERROR', `Failed to link GitHub account: ${error.message || error.code || 'Unknown error'}`);
+    }
+  };
+
+  const handleCloneRepo = async (cloneUrl, repoName) => {
+    if (!githubToken || !cloneUrl) return;
+    setIsScanning(true);
+    addLog('INFO', `Cloning GitHub repository: ${repoName}...`);
+    try {
+      const response = await fetch('http://localhost:3001/api/github/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: githubToken, cloneUrl, repoName })
+      });
+      const data = await response.json();
+      if (data.path) {
+        setRepoPath(data.path);
+        addLog('SUCCESS', `Repository cloned successfully.`);
+      } else {
+        addLog('ERROR', data.error || 'Failed to clone repository.');
+      }
+    } catch (err) {
+      console.error("Clone error:", err);
+      addLog('ERROR', 'Error communicating with backend during clone.');
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleSelectFolder = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/api/select-folder');
+      const data = await response.json();
+      if (data.path) {
+        setRepoPath(data.path);
+      }
+    } catch (err) {
+      console.error("Failed to select folder:", err);
+    }
+  };
+
+  React.useEffect(() => {
+    if (repoPath !== '.') {
+      fetch('http://localhost:3001/api/list-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoPath })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.files) setFolderItems(data.files);
+      })
+      .catch(err => console.error(err));
+    } else {
+      setFolderItems([]);
+    }
+  }, [repoPath]);
+
+  const handleRunAudit = async () => {
+    setIsScanning(true);
+    addLog('INFO', `Starting full audit on ${repoPath}...`);
+    try {
+      const response = await fetch('http://localhost:3001/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoPath: repoPath })
+      });
+      const data = await response.json();
+      setScanStats({ files: data.stats.filesIndexed, lines: data.stats.totalLines, chunks: data.stats.totalChunks });
+      addLog('SUCCESS', `Scan complete. Indexed ${data.stats.filesIndexed} files and ${data.stats.totalChunks} chunks.`);
+      
+      setIsReviewing(true);
+      addLog('INFO', `Analyzing codebase for vulnerabilities using AI...`);
+      const reviewResponse = await fetch('http://localhost:3001/api/review-repo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: model })
+      });
+      
+      if (!reviewResponse.ok) {
+        addLog('ERROR', "Analysis request failed.");
+        throw new Error('Analysis request failed');
+      }
+
+      const reader = reviewResponse.body.getReader();
+      const decoder = new TextDecoder();
+      setFindings('');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunkText = decoder.decode(value, { stream: true });
+        setFindings(prev => prev + chunkText);
+      }
+      
+      addLog('SUCCESS', `Analysis complete.`);
+    } catch (error) {
+      console.error("Scan error:", error);
+      addLog('ERROR', "Error running audit. Make sure the backend is running.");
+    } finally {
+      setIsScanning(false);
+      setIsReviewing(false);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim()) return;
+    
+    const newUserMessage = { role: 'user', content: inputValue };
+    const newMessages = [...chatMessages, newUserMessage];
+    setChatMessages(newMessages);
+    setInputValue('');
+    
+    setChatMessages(prev => [...prev, { role: 'agent', content: '' }]);
+
+    try {
+      const response = await fetch('http://localhost:3001/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages, model: model, useRAG: true })
+      });
+
+      if (!response.ok) throw new Error('Network error');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let agentContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        agentContent += decoder.decode(value, { stream: true });
+        
+        setChatMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: 'agent', content: agentContent };
+          return updated;
+        });
+      }
+    } catch (error) {
+      console.error("Chat error:", error);
+      setChatMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = { role: 'agent', content: 'Error communicating with the backend.' };
+        return updated;
+      });
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-[#10b981] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth onLogin={() => {}} />;
+  }
 
 
   return (
@@ -48,7 +310,8 @@ export default function App() {
             <button className="text-[#9ca3af] hover:text-[#f3f4f6] transition-colors"><Activity size={24} strokeWidth={1.5} /></button>
           </div>
           <div className="flex flex-col gap-6">
-            <button className="text-[#9ca3af] hover:text-[#f3f4f6] transition-colors"><Settings size={24} strokeWidth={1.5} /></button>
+            <button className="text-[#9ca3af] hover:text-[#f3f4f6] transition-colors" title="Settings"><Settings size={24} strokeWidth={1.5} /></button>
+            <button onClick={() => { localStorage.removeItem('github_token'); signOut(auth); }} className="text-[#9ca3af] hover:text-red-400 transition-colors" title="Sign Out"><User size={24} strokeWidth={1.5} /></button>
           </div>
         </div>
 
@@ -63,28 +326,45 @@ export default function App() {
             <div className="mb-2">
               <div className="flex items-center text-sm text-[#f3f4f6] font-medium py-1 px-2 hover:bg-[#222222] rounded cursor-pointer group">
                 <ChevronDown size={16} className="mr-1 text-[#9ca3af] group-hover:text-white transition-colors" />
-                <span className="truncate">COMPACT-DESKTOP-APP</span>
+                <span className="truncate" title={repoPath}>
+                  {repoPath !== '.' ? repoPath.split('\\').pop().toUpperCase() : 'NO FOLDER SELECTED'}
+                </span>
               </div>
               <div className="pl-6 flex flex-col mt-1">
-                <FileItem name="src" type="folder" />
-                <FileItem name="components" type="folder" nested />
-                <FileItem name="App.tsx" type="file" icon={<FileCode2 size={14} className="text-[#9ca3af]" />} nested />
-                <FileItem name="backend" type="folder" />
-                <FileItem name="README.md" type="file" icon={<FileCode2 size={14} className="text-[#9ca3af]" />} />
-                <FileItem name="package.json" type="file" icon={<FileCode2 size={14} className="text-[#9ca3af]" />} />
+                {folderItems.length > 0 ? (
+                  folderItems.map((item, idx) => (
+                    <FileItem 
+                      key={idx} 
+                      name={item.name} 
+                      type={item.isDirectory ? 'folder' : 'file'} 
+                      icon={!item.isDirectory ? <FileCode2 size={14} className="text-[#9ca3af]" /> : null} 
+                    />
+                  ))
+                ) : (
+                  <div className="text-xs text-[#6b7280] py-2">Select a folder to view files</div>
+                )}
               </div>
             </div>
             
             <div className="mt-6">
-              <div className="flex items-center text-sm text-[#f3f4f6] font-medium py-1 px-2 hover:bg-[#222222] rounded cursor-pointer group">
-                <ChevronDown size={16} className="mr-1 text-[#9ca3af]" />
+              <div 
+                className="flex items-center text-sm text-[#f3f4f6] font-medium py-1 px-2 hover:bg-[#222222] rounded cursor-pointer group"
+                onClick={() => setIsHotspotsOpen(!isHotspotsOpen)}
+              >
+                {isHotspotsOpen ? (
+                  <ChevronDown size={16} className="mr-1 text-[#9ca3af]" />
+                ) : (
+                  <ChevronRight size={16} className="mr-1 text-[#9ca3af]" />
+                )}
                 <span>Security Hotspots</span>
               </div>
-              <div className="pl-6 flex flex-col mt-1 space-y-1">
-                <IssueItem title="Hardcoded Secret in auth.ts" severity="high" />
-                <IssueItem title="Unsanitized Input in search" severity="medium" />
-                <IssueItem title="Inefficient React render" severity="low" />
-              </div>
+              {isHotspotsOpen && (
+                <div className="pl-6 flex flex-col mt-1 space-y-1">
+                  <IssueItem title="Hardcoded Secret in auth.ts" severity="high" />
+                  <IssueItem title="Unsanitized Input in search" severity="medium" />
+                  <IssueItem title="Inefficient React render" severity="low" />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -93,19 +373,55 @@ export default function App() {
       {/* COLUMN 2: MAIN WORKSPACE */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0a]">
         {/* Top Header / Breadcrumbs */}
-        <div className="h-12 border-b border-[#222222] flex items-center px-4 justify-between bg-[#111111]">
-          <div className="flex items-center text-sm text-[#9ca3af]">
-            <span>compact-desktop-app</span>
-            <ChevronRight size={14} className="mx-1" />
-            <span>src</span>
-            <ChevronRight size={14} className="mx-1" />
-            <span className="text-[#f3f4f6]">App.tsx</span>
+        <div className="h-12 border-b border-[#222222] flex items-center px-4 justify-between bg-[#111111] gap-4">
+          <div className="flex items-center text-sm text-[#9ca3af] min-w-0 flex-1">
+            <span className="truncate flex-shrink-0 max-w-[200px]">{repoPath !== '.' ? repoPath.split(/[\\/]/).pop() : 'No Project Selected'}</span>
+            {repoPath !== '.' && (
+              <>
+                <ChevronRight size={14} className="mx-1 flex-shrink-0" />
+                <span className="text-[#f3f4f6] text-xs truncate flex-1">{repoPath}</span>
+              </>
+            )}
           </div>
           
-          <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-[#161616] text-[#9ca3af] hover:bg-[#10b981]/20 border border-[#222222] transition-colors rounded text-sm font-medium">
-              <Play size={14} fill="currentColor" />
-              Run Full Audit
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {!githubToken ? (
+              <button 
+                onClick={handleGithubLink}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[#161616] text-[#9ca3af] hover:bg-[#222222] border border-[#222222] transition-colors rounded text-sm font-medium"
+              >
+                <FolderGit2 size={14} />
+                Login to GitHub
+              </button>
+            ) : (
+              <select 
+                onChange={(e) => {
+                  const repo = githubRepos.find(r => r.clone_url === e.target.value);
+                  if (repo) handleCloneRepo(repo.clone_url, repo.full_name);
+                }}
+                className="px-3 py-1.5 bg-[#161616] text-[#9ca3af] hover:bg-[#222222] border border-[#222222] transition-colors rounded text-sm font-medium max-w-[200px]"
+                defaultValue=""
+              >
+                <option value="" disabled>Select GitHub Repo...</option>
+                {githubRepos.map(repo => (
+                  <option key={repo.id} value={repo.clone_url}>{repo.full_name}</option>
+                ))}
+              </select>
+            )}
+            <button 
+              onClick={handleSelectFolder}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#161616] text-[#9ca3af] hover:bg-[#222222] border border-[#222222] transition-colors rounded text-sm font-medium"
+            >
+              <FolderGit2 size={14} />
+              Open Folder
+            </button>
+            <button 
+              onClick={handleRunAudit}
+              disabled={isScanning || repoPath === '.'}
+              className={`flex items-center gap-2 px-3 py-1.5 ${isScanning || repoPath === '.' ? 'bg-[#10b981]/10 text-[#10b981]/50 cursor-not-allowed' : 'bg-[#161616] text-[#9ca3af] hover:bg-[#10b981]/20'} border border-[#222222] transition-colors rounded text-sm font-medium`}
+            >
+              <Play size={14} fill="currentColor" className={isScanning ? 'animate-pulse' : ''} />
+              {isScanning ? 'Auditing...' : 'Run Full Audit'}
             </button>
             <button className="p-1.5 text-[#9ca3af] hover:text-[#f3f4f6] rounded border border-[#222222] hover:border-[#9ca3af] transition-all">
               <Download size={16} />
@@ -126,9 +442,7 @@ export default function App() {
 
         {/* Editor Tabs */}
         <div className="flex border-b border-[#222222] bg-[#0a0a0a] overflow-x-auto hide-scrollbar">
-          <Tab active title="Dashboard.md" icon={<Activity size={14} className="text-[#f3f4f6]" />} />
-          <Tab title="App.tsx" icon={<FileCode2 size={14} className="text-[#9ca3af]" />} />
-          <Tab title="Security Report" icon={<ShieldAlert size={14} className="text-[#9ca3af]" />} />
+          <Tab active title="Dashboard" icon={<Activity size={14} className="text-[#f3f4f6]" />} />
         </div>
 
         {/* Main Content Area */}
@@ -144,9 +458,9 @@ export default function App() {
                 <p className="text-[#9ca3af]">Local-First AI Code Review • Analysis completed in 1.2s</p>
               </div>
               <div className="flex gap-4">
-                <MetricCard title="Health Score" value="84/100" color="text-[#f3f4f6]" />
-                <MetricCard title="Vulnerabilities" value="3" color="text-[#f3f4f6]" />
-                <MetricCard title="Code Smells" value="12" color="text-[#f3f4f6]" />
+                <MetricCard title="Files Scanned" value={scanStats.files} color="text-[#f3f4f6]" />
+                <MetricCard title="Lines of Code" value={scanStats.lines} color="text-[#f3f4f6]" />
+                <MetricCard title="Chunks Indexed" value={scanStats.chunks} color="text-[#f3f4f6]" />
               </div>
             </div>
 
@@ -156,23 +470,41 @@ export default function App() {
                   <ShieldAlert className="text-[#f3f4f6]" size={18} />
                   Critical Findings
                 </h3>
+                <div className="flex items-center gap-3">
+                  {typeof findings === 'string' && findings.length > 0 && (
+                    <button 
+                      onClick={() => {
+                        const blob = new Blob([findings], { type: 'text/markdown' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'Audit_Report.md';
+                        a.click();
+                      }}
+                      className="px-3 py-1 bg-[#10b981]/10 text-[#10b981] hover:bg-[#10b981]/20 border border-[#10b981]/20 transition-colors rounded text-xs font-medium flex items-center gap-1"
+                    >
+                      <Download size={12} /> Download Report
+                    </button>
+                  )}
+                  {isReviewing && <span className="text-[#9ca3af] text-sm animate-pulse">AI is analyzing...</span>}
+                </div>
               </div>
-              <div className="p-0">
-                <FindingItem 
-                  file="src/auth/firebase.ts" 
-                  line="L24" 
-                  issue="Hardcoded API Key detected in source code."
-                  suggestion="Move to environment variables (.env) and use import.meta.env.VITE_FIREBASE_KEY."
-                  severity="high"
-                />
-                <FindingItem 
-                  file="backend/db/query.js" 
-                  line="L112" 
-                  issue="Possible SQL Injection via unsanitized template literal."
-                  suggestion="Use parameterized queries provided by the database driver."
-                  severity="high"
-                />
-              </div>
+              
+              {typeof findings === 'string' && findings.length > 0 ? (
+                <div className="p-6 bg-[#0a0a0a] text-sm text-[#f3f4f6] font-mono whitespace-pre-wrap max-h-[600px] overflow-y-auto leading-relaxed">
+                  {findings}
+                </div>
+              ) : Array.isArray(findings) && findings.length > 0 ? (
+                <div className="flex flex-col">
+                  {findings.map((f, i) => (
+                    <FindingItem key={i} file={f.file} line={f.line} issue={f.issue} suggestion={f.suggestion} severity={f.severity || 'high'} />
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 text-sm text-[#9ca3af] text-center">
+                  {isReviewing ? "Waiting for AI analysis to complete..." : "No critical findings detected yet. Click 'Run Full Audit' to begin."}
+                </div>
+              )}
             </div>
 
             <div className="bg-[#111111] border border-[#222222] rounded-md p-6">
@@ -180,11 +512,10 @@ export default function App() {
                 <Terminal size={18} className="text-[#9ca3af]" />
                 System Console
               </h3>
-              <div className="bg-[#0a0a0a] p-4 rounded border border-[#222222] font-mono text-sm text-[#9ca3af] space-y-1">
-                <p>[13:42:01] <span className="text-[#9ca3af]">INFO</span> Starting local Ollama engine...</p>
-                <p>[13:42:02] <span className="text-[#9ca3af]">INFO</span> Connecting to Elasticsearch on port 9200...</p>
-                <p>[13:42:02] <span className="text-[#f3f4f6]">SUCCESS</span> Elasticsearch connected. 248 documents indexed.</p>
-                <p>[13:42:05] <span className="text-[#f3f4f6]">WARN</span> Rule engine found 3 critical vulnerabilities.</p>
+              <div className="bg-[#0a0a0a] p-4 rounded border border-[#222222] font-mono text-sm text-[#9ca3af] space-y-1 h-48 overflow-y-auto">
+                {consoleLogs.map((log, i) => (
+                  <p key={i}>[{log.time}] <span className={log.type === 'SUCCESS' ? 'text-[#10b981]' : log.type === 'ERROR' ? 'text-red-500' : 'text-[#9ca3af]'}>{log.type}</span> {log.text}</p>
+                ))}
                 <p className="text-[#f3f4f6] animate-pulse">_</p>
               </div>
             </div>
@@ -212,24 +543,13 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <ChatMessage 
-            role="agent" 
-            message="I've completed the security scan. I found 3 critical issues and some code smells. Would you like me to explain the hardcoded Firebase key issue?" 
-          />
-          <ChatMessage 
-            role="user" 
-            message="Yes, how do I fix it in React?" 
-          />
-          <ChatMessage 
-            role="agent" 
-            message="To secure your Firebase key in a Vite React app, you should:
-
-1. Create a `.env.local` file in your root.
-2. Add `VITE_FIREBASE_KEY=your_key_here`.
-3. In your code, replace the string with `import.meta.env.VITE_FIREBASE_KEY`.
-
-I can generate the patch for you if you'd like!" 
-          />
+          {chatMessages.map((msg, index) => (
+            <ChatMessage 
+              key={index}
+              role={msg.role} 
+              message={msg.content} 
+            />
+          ))}
         </div>
 
         <div className="p-4 border-t border-[#222222] bg-[#111111]">
@@ -242,6 +562,15 @@ I can generate the patch for you if you'd like!"
   className="w-full bg-[#161616] border border-[#222222] rounded-md pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-[#9ca3af] transition-all text-[#f3f4f6] placeholder-[#9ca3af]"
 />
             <button className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#9ca3af] hover:text-[#f3f4f6] transition-colors">
+            <input 
+              type="text" 
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder="Ask about your codebase..." 
+              className="w-full bg-[#161616] border border-[#222222] rounded-md pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-[#9ca3af] transition-all text-[#f3f4f6] placeholder-[#9ca3af]"
+            />
+            <button onClick={handleSendMessage} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#9ca3af] hover:text-[#f3f4f6] transition-colors">
               <Play size={16} className="rotate-90" />
             </button>
           </div>
@@ -305,7 +634,7 @@ const FindingItem = ({ file, line, issue, suggestion, severity }) => (
 const ChatMessage = ({ role, message }) => (
   <div className={`flex gap-3 ${role === 'user' ? 'flex-row-reverse' : ''}`}>
     <div className={`w-8 h-8 flex-shrink-0 rounded flex items-center justify-center ${role === 'agent' ? 'bg-[#161616] border border-[#222222] text-[#f3f4f6]' : 'bg-[#222222] text-[#f3f4f6]'}`}>
-      {role === 'agent' ? <Cpu size={16} /> : <User size={16} />}
+      {role === 'agent' ? <img src={compactLogo} alt="Agent" className="w-4 h-4 object-contain opacity-80" /> : <User size={16} />}
     </div>
     <div className={`flex-1 rounded p-3 text-sm ${role === 'agent' ? 'bg-[#161616] border border-[#222222] text-[#f3f4f6]' : 'bg-[#222222] text-[#f3f4f6]'}`}>
       <div className="whitespace-pre-wrap leading-relaxed">{message}</div>
