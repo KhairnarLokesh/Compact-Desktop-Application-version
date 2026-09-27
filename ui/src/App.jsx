@@ -33,7 +33,7 @@ export default function App() {
   }, []);
 
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [model, setModel] = useState('llama3.2:1b');
+  const [model, setModel] = useState('qwen2.5-coder:7b');
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [repoPath, setRepoPath] = useState('.');
@@ -51,6 +51,7 @@ export default function App() {
   };
   const [inputValue, setInputValue] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [isHotspotsOpen, setIsHotspotsOpen] = useState(true);
 
   const [githubToken, setGithubToken] = useState(null);
   const [githubRepos, setGithubRepos] = useState([]);
@@ -89,7 +90,12 @@ export default function App() {
     try {
       let credential;
       try {
-        const result = await linkWithPopup(auth.currentUser, githubProvider);
+        let result;
+        if (auth.currentUser) {
+          result = await linkWithPopup(auth.currentUser, githubProvider);
+        } else {
+          result = await signInWithPopup(auth, githubProvider);
+        }
         credential = GithubAuthProvider.credentialFromResult(result);
       } catch (err) {
         if (err.code === 'auth/credential-already-in-use' || err.code === 'auth/provider-already-linked') {
@@ -118,7 +124,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Github linking error:", error);
-      addLog('ERROR', 'Failed to link GitHub account.');
+      addLog('ERROR', `Failed to link GitHub account: ${error.message || error.code || 'Unknown error'}`);
     }
   };
 
@@ -196,13 +202,24 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: model })
       });
-      const reviewData = await reviewResponse.json();
-      if (reviewData.findings) {
-        setFindings(reviewData.findings);
-        addLog('SUCCESS', `Analysis complete. Found ${reviewData.findings.length} issues.`);
-      } else {
-        addLog('ERROR', "Analysis returned unexpected format.");
+      
+      if (!reviewResponse.ok) {
+        addLog('ERROR', "Analysis request failed.");
+        throw new Error('Analysis request failed');
       }
+
+      const reader = reviewResponse.body.getReader();
+      const decoder = new TextDecoder();
+      setFindings('');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunkText = decoder.decode(value, { stream: true });
+        setFindings(prev => prev + chunkText);
+      }
+      
+      addLog('SUCCESS', `Analysis complete.`);
     } catch (error) {
       console.error("Scan error:", error);
       addLog('ERROR', "Error running audit. Make sure the backend is running.");
@@ -328,15 +345,24 @@ export default function App() {
             </div>
             
             <div className="mt-6">
-              <div className="flex items-center text-sm text-[#f3f4f6] font-medium py-1 px-2 hover:bg-[#222222] rounded cursor-pointer group">
-                <ChevronDown size={16} className="mr-1 text-[#9ca3af]" />
+              <div 
+                className="flex items-center text-sm text-[#f3f4f6] font-medium py-1 px-2 hover:bg-[#222222] rounded cursor-pointer group"
+                onClick={() => setIsHotspotsOpen(!isHotspotsOpen)}
+              >
+                {isHotspotsOpen ? (
+                  <ChevronDown size={16} className="mr-1 text-[#9ca3af]" />
+                ) : (
+                  <ChevronRight size={16} className="mr-1 text-[#9ca3af]" />
+                )}
                 <span>Security Hotspots</span>
               </div>
-              <div className="pl-6 flex flex-col mt-1 space-y-1">
-                <IssueItem title="Hardcoded Secret in auth.ts" severity="high" />
-                <IssueItem title="Unsanitized Input in search" severity="medium" />
-                <IssueItem title="Inefficient React render" severity="low" />
-              </div>
+              {isHotspotsOpen && (
+                <div className="pl-6 flex flex-col mt-1 space-y-1">
+                  <IssueItem title="Hardcoded Secret in auth.ts" severity="high" />
+                  <IssueItem title="Unsanitized Input in search" severity="medium" />
+                  <IssueItem title="Inefficient React render" severity="low" />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -598,7 +624,7 @@ const FindingItem = ({ file, line, issue, suggestion, severity }) => (
 const ChatMessage = ({ role, message }) => (
   <div className={`flex gap-3 ${role === 'user' ? 'flex-row-reverse' : ''}`}>
     <div className={`w-8 h-8 flex-shrink-0 rounded flex items-center justify-center ${role === 'agent' ? 'bg-[#161616] border border-[#222222] text-[#f3f4f6]' : 'bg-[#222222] text-[#f3f4f6]'}`}>
-      {role === 'agent' ? <Cpu size={16} /> : <User size={16} />}
+      {role === 'agent' ? <img src={compactLogo} alt="Agent" className="w-4 h-4 object-contain opacity-80" /> : <User size={16} />}
     </div>
     <div className={`flex-1 rounded p-3 text-sm ${role === 'agent' ? 'bg-[#161616] border border-[#222222] text-[#f3f4f6]' : 'bg-[#222222] text-[#f3f4f6]'}`}>
       <div className="whitespace-pre-wrap leading-relaxed">{message}</div>

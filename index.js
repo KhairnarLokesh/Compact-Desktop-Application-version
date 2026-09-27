@@ -146,7 +146,7 @@ app.post('/api/chat', async (req, res) => {
     try {
         const { messages, model, useRAG } = req.body;
         // Default model to 'codegemma' if not provided
-        const targetModel = model || 'llama3.2:1b'; 
+        const targetModel = model || 'qwen2.5-coder:7b'; 
         
         if (!messages || !Array.isArray(messages)) {
             return res.status(400).json({ error: "Messages array is required." });
@@ -210,7 +210,7 @@ app.post('/api/chat', async (req, res) => {
 app.post('/api/review-repo', async (req, res) => {
     try {
         const { model } = req.body;
-        const targetModel = model || 'llama3.2:1b';
+        const targetModel = model || 'qwen2.5-coder:7b';
         
         let embedding = null;
         try {
@@ -221,7 +221,7 @@ app.post('/api/review-repo', async (req, res) => {
             embedding = embedResponse.embedding;
         } catch (err) {}
 
-        const contextChunks = await searchRelevantContext("security issues", embedding, 5); 
+        const contextChunks = await searchRelevantContext("security vulnerabilities, code smells, hardcoded secrets, inefficient code, errors, bugs", embedding, 30); 
         
         if (!contextChunks || contextChunks.length === 0) {
             return res.json({ findings: [] });
@@ -232,50 +232,91 @@ app.post('/api/review-repo', async (req, res) => {
             contextStr += formatChunkForReview(chunk, contextChunks.length, index + 1) + "\n";
         });
 
-        const prompt = `${contextStr}\nReview the above code snippets and provide a comprehensive file-by-file analysis in the EXACT format below. Do NOT use JSON. Use pure markdown text.
+        const prompt = `${contextStr}
+You are an expert Senior Software Engineer and autonomous Code Reviewer.
 
-Format:
-Detailed Analysis
-Repository Review
+Your task is to thoroughly scan **all provided files and code**, detect real issues, and generate a complete professional Code Review Report with corrections.
 
-Repository: [Extract Repo Name from context or use unknown]
-Branch: main
-Files selected: [Count]
+### Instructions:
+- Analyze every file and every piece of code given to you.
+- Find real bugs, security vulnerabilities, logic errors, performance issues, bad practices, and missing error handling.
+- Do not invent problems.
+- Provide clear corrections for every issue found.
 
-Starting file-by-file analysis…
+### Output Format (MUST follow exactly):
 
-Progress
+# Code Review Report
 
-Analyzing file 1/[Count]: [Filename]
-Risk: [low | medium | high | critical]
-Issues: 
-• [Issue 1]
-• [Issue 2]
-Suggested Fixes: 
-• [Fix 1]
-• [Fix 2]
-File Content:
-[Brief snippet or summary]
+**Project:** Local Repository
+**Review Date:** ${new Date().toISOString().split('T')[0]}
+**Model:** ${targetModel}
+**Overall Risk Score:** [0-100] ([Low / Medium / High / Critical])
 
-(Repeat for all files with issues)
+## Executive Summary
+[Write 4-6 sentences summarizing the overall quality of the codebase, main risks, and key recommendations]
 
----
-Finalizing
-Generating overall summary...
----
-Repository Summary
-[Overall summary]
-Suggestions
-[Markdown table or list of suggestions]`;
+## Findings
 
-        const response = await ollama.chat({
+For every issue found, use this exact structure:
+
+────────────────────────────────────────────────────────
+[SEVERITY] – [SHORT TITLE]
+File: [full/file/path]
+Lines: [start]-[end]
+
+Problematic code:
+\`\`\`[language]
+[paste the original code here]
+\`\`\`
+Why this is a problem:
+[Clear technical explanation of the issue and its impact]
+Suggested fix:
+\`\`\`[language]
+[complete corrected code that can be directly used]
+\`\`\`
+────────────────────────────────────────────────────────
+
+Severity Levels (use only these):
+🔴 CRITICAL
+🟠 HIGH
+🟡 MEDIUM
+🟢 LOW
+🔵 SUGGESTION
+
+## Summary of Recommendations
+
+[List the most important actions in priority order]
+
+## Next Steps
+
+...
+...
+...
+
+### Strict Rules:
+- Scan and review all the code provided.
+- Always show the original problematic code.
+- Always provide a complete and correct suggested fix.
+- Order findings from highest severity to lowest.
+- If a file has no issues, you can skip it or write "No significant issues found in this file."
+- Be precise, technical, and professional.
+- Never give generic advice.
+- MUST extract the exact file paths and line numbers from the provided chunk headers.`;
+
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const stream = await ollama.chat({
             model: targetModel,
             messages: [{ role: 'user', content: prompt }],
-            stream: false,
+            stream: true,
             options: { num_ctx: 8192 }
         });
 
-        res.json({ findings: response.message.content.trim() });
+        for await (const chunk of stream) {
+            res.write(chunk.message.content);
+        }
+        res.end();
     } catch (error) {
         console.error("Error during repo review:", error);
         res.status(500).json({ error: "Failed to perform review" });
